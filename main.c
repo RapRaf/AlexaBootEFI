@@ -40,10 +40,10 @@ ReceiveEventCallback(EFI_EVENT   Event, void  *UserData)
 
 static EFI_STATUS
 EFIAPI
-WaitForFlag(BOOLEAN *Flag, EFI_UDP4_PROTOCOL  *Udp4Protocol, UINTN   Timeout)
+WaitForFlag(BOOLEAN *Flag, EFI_UDP4  *Udp4Protocol, UINTN   Timeout)
 {
     EFI_STATUS  Status;
-    UINT8       LastSecond = MAX_UINT8;
+    UINT8       LastSecond = 0xFF;
     UINT8       Timer = 0;
     EFI_TIME    CurrentTime;
 
@@ -86,8 +86,8 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
 
     EFI_HANDLE                      Udp4ChildHandle = NULL;
 
-    EFI_UDP4_PROTOCOL               *Udp4Protocol = NULL;
-    EFI_SERVICE_BINDING_PROTOCOL    *Udp4ServiceBindingProtocol = NULL;
+    EFI_UDP4                        *Udp4Protocol = NULL;
+    EFI_SERVICE_BINDING             *Udp4ServiceBindingProtocol = NULL;
 
     CHAR8                           TxBuffer[] = "Hello Server!";
 
