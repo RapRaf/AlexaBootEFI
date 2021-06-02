@@ -1,7 +1,10 @@
 #include <efi.h>
 #include <efilib.h>
+#ifndef LOG
+#define LOG(fmt, ...) //AsciiPrint(fmt, __VA_ARGS__)
+#endif
 #ifndef TRACE
-#define TRACE(status) //  LOG("Status: '%r', Function: '%a', File: '%a', Line: '%d'\r\n", status, __FUNCTION__, __FILE__, __LINE__)
+#define TRACE(status)   LOG("Status: '%r', Function: '%a', File: '%a', Line: '%d'\r\n", status, __FUNCTION__, __FILE__, __LINE__)
 #endif
 
  EFI_GUID gEfiUdp4ServiceBindingProtocolGuid = EFI_UDP4_SERVICE_BINDING_PROTOCOL;
@@ -12,16 +15,18 @@ extern EFI_RUNTIME_SERVICES *gRT;
 
  BOOLEAN gTransmitCompleteFlag = FALSE;
  BOOLEAN gReceiveCompleteFlag = FALSE;
+ BOOLEAN windows,inux;
+ 
 
 /*
 Configuration
 */
-EFI_IPv4_ADDRESS gLocalAddress = {{ 192,168,1,11 }};
- EFI_IPv4_ADDRESS gSubnetMask = {{ 255, 255, 255, 0 }};
- UINT16 gLocalPort = 33333;
+EFI_IPv4_ADDRESS gLocalAddress = {{ 0,0,0,0 }};
+ EFI_IPv4_ADDRESS gSubnetMask = {{ 0, 0, 0, 0 }};
+ UINT16 gLocalPort = 0;
 
- EFI_IPv4_ADDRESS gRemoteAddress = {{ 192,168,1,97 }};
- UINT16 gRemotePort = 4210;
+ EFI_IPv4_ADDRESS gRemoteAddress = {{ 192,168,0,69 }};
+ UINT16 gRemotePort = 8080;
 
 
 static VOID 
@@ -46,8 +51,12 @@ WaitForFlag(BOOLEAN *Flag, EFI_UDP4  *Udp4Protocol, UINTN   Timeout)
     UINT8       LastSecond = 0xff;
     UINT8       Timer = 0;
     EFI_TIME    CurrentTime;
+            
+
 
     while (!*Flag && (Timeout == 0 || Timer < Timeout)) {
+               
+
         if (Udp4Protocol) {
             uefi_call_wrapper(Udp4Protocol->Poll,1,
                 Udp4Protocol);
@@ -57,6 +66,7 @@ WaitForFlag(BOOLEAN *Flag, EFI_UDP4  *Udp4Protocol, UINTN   Timeout)
         Status = uefi_call_wrapper(gRT->GetTime,2,&CurrentTime, NULL);
 
         if (EFI_ERROR(Status)) {
+            Print(L"poll error\n");
             TRACE(Status);
             // Error handling
             return Status;
@@ -70,6 +80,7 @@ WaitForFlag(BOOLEAN *Flag, EFI_UDP4  *Udp4Protocol, UINTN   Timeout)
 
     return *Flag ? EFI_SUCCESS : EFI_TIMEOUT;
 }
+
 
 EFI_STATUS
 EFIAPI
@@ -88,10 +99,11 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
 
     EFI_UDP4               *Udp4Protocol = NULL;
     EFI_SERVICE_BINDING    *Udp4ServiceBindingProtocol = NULL;
+   
 
     CHAR8                           TxBuffer[] = "Hello Server!";
-
-
+    //CHAR8                           RxBuffer[255]; 
+   
     /*
     Step 1: Locate the corresponding Service Binding Protocol, if there is more then 1 network interface gBS->LocateHandleBuffer should be used
     */
@@ -99,7 +111,7 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     Status = uefi_call_wrapper(gBS->LocateProtocol,3,&gEfiUdp4ServiceBindingProtocolGuid,NULL,&Udp4ServiceBindingProtocol);
 
     if (EFI_ERROR(Status)) {
-        Print(L"locateproto");
+        Print(L"locate protocol error\n");
         TRACE(Status);
         // Error handling
         return Status;
@@ -112,7 +124,7 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     Status = uefi_call_wrapper(Udp4ServiceBindingProtocol->CreateChild,2,Udp4ServiceBindingProtocol,&Udp4ChildHandle);
 
     if (EFI_ERROR(Status)) {
-        Print(L"creachild");
+        Print(L"crea child error\n");
         TRACE(Status);
         // Error handling
         return Status;
@@ -121,7 +133,7 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     Status = uefi_call_wrapper(gBS->HandleProtocol,3,Udp4ChildHandle,&gEfiUdp4ProtocolGuid,&Udp4Protocol);
 
     if (EFI_ERROR(Status)) {
-        Print(L"handprot");
+        Print(L"handprot error\n");
         TRACE(Status);
         // Error handling
         return Status;
@@ -132,18 +144,18 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     */
 
     Udp4ConfigData.AcceptBroadcast = FALSE;
-    Udp4ConfigData.AcceptPromiscuous = TRUE;
+    Udp4ConfigData.AcceptPromiscuous = FALSE;
     Udp4ConfigData.AcceptAnyPort = FALSE;
     Udp4ConfigData.AllowDuplicatePort = FALSE;
 
-    Udp4ConfigData.TimeToLive = 180;
+    Udp4ConfigData.TimeToLive = 16;
     Udp4ConfigData.TypeOfService = 0;
     Udp4ConfigData.DoNotFragment = TRUE;
     Udp4ConfigData.ReceiveTimeout = 0;
     Udp4ConfigData.TransmitTimeout = 0;
 
     // Change to TRUE and set the following fields to zero if DHCP is used
-    Udp4ConfigData.UseDefaultAddress = FALSE;
+    Udp4ConfigData.UseDefaultAddress = TRUE;
     uefi_call_wrapper(gBS->CopyMem,3,&Udp4ConfigData.StationAddress, &gLocalAddress, sizeof(Udp4ConfigData.StationAddress));
     uefi_call_wrapper(gBS->CopyMem,3,&Udp4ConfigData.SubnetMask, &gSubnetMask, sizeof(Udp4ConfigData.SubnetMask));
     Udp4ConfigData.StationPort = gLocalPort;
@@ -154,11 +166,11 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
 
     if (EFI_ERROR(Status)) {
         TRACE(Status);
-        Print(L"config");
+        Print(L"config error\n");
         // Error handling
         return Status;
     }
-    Print(L"Pacchetto pronto\r\n");
+    
     /*
     Step 4: Send data and wait for completion
     */
@@ -169,7 +181,7 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     Status = uefi_call_wrapper(gBS->CreateEvent,5,EVT_NOTIFY_SIGNAL,TPL_CALLBACK,TransmitEventCallback,NULL,&(Udp4TansmitCompletionToken.Event));
 
     if (EFI_ERROR(Status)) {
-        Print(L"creaevent");
+        Print(L"crea event  error\n");
         TRACE(Status);
         // Error handling
         return Status;
@@ -185,13 +197,12 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     Udp4TransmitData.FragmentTable[0].FragmentBuffer = TxBuffer;
 
     gTransmitCompleteFlag = FALSE;
-
+    LOG("Sending data...\r\n");
     Status = uefi_call_wrapper(Udp4Protocol->Transmit,2,Udp4Protocol,&Udp4TansmitCompletionToken);
-    Print(L"Pacchetto inviato %s\r\n", Status);
-   
-
+     
+    
     if (EFI_ERROR(Status)) {
-        Print(L"transmit");
+        Print(L"transmit error\n");
         TRACE(Status);
         // Error handling
         return Status;
@@ -200,23 +211,24 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     Status = WaitForFlag(
         &gTransmitCompleteFlag,
         Udp4Protocol,
-        10);
+        3);
+
 
     if (EFI_ERROR(Status)) {
-        Print(L"waitfor flag");
+        Print(L"waitfor flag error\n");
         TRACE(EFI_TIMEOUT);
         // Error handling
         return EFI_TIMEOUT;
     }
 
     if (EFI_ERROR(Udp4TansmitCompletionToken.Status)) {
-        Print(L"udp4transtoken");
+        Print(L"udp4transmit completion token error: %s\n",Status);
+        
         TRACE(Status);
         // Error handling
         return Status;
     }
-    Print(L"Pacchetto inviato\r\n");
-
+    LOG("Data sent.\r\n");
    
     /*
     Step 5: Receive data
@@ -228,7 +240,7 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     Status = uefi_call_wrapper(gBS->CreateEvent,5,EVT_NOTIFY_SIGNAL,TPL_CALLBACK,ReceiveEventCallback,NULL,&(Udp4ReceiveCompletionToken.Event));
 
     if (EFI_ERROR(Status)) {
-        Print(L"crearitorno");
+        Print(L"crea ritorno error\n");
         TRACE(Status);
         // Error handling
         return Status;
@@ -238,20 +250,21 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
 
     gReceiveCompleteFlag = FALSE;
 
-    
+    LOG("Receiving data...\r\n");
+
     Status = uefi_call_wrapper(Udp4Protocol->Receive,2,Udp4Protocol,&Udp4ReceiveCompletionToken);
 
     if (EFI_ERROR(Status)) {
-        Print(L"ricevi");
+        Print(L"ricevi error\n");
         TRACE(Status);
         // Error handling
         return Status;
     }
 
-    Status = WaitForFlag(&gReceiveCompleteFlag,Udp4Protocol,10);
+    Status = WaitForFlag(&gReceiveCompleteFlag,Udp4Protocol,4);
 
     if (EFI_ERROR(Status)) {
-        Print(L"waitflag2");
+        Print(L"waitflag2 error\n");
         TRACE(EFI_TIMEOUT);
         // Error handling
         return EFI_TIMEOUT;
@@ -266,20 +279,28 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
     
    // Step 6: Process received data
     
-    
     if (
         Udp4ReceiveCompletionToken.Packet.RxData &&
         Udp4ReceiveCompletionToken.Packet.RxData->FragmentCount > 0 &&
         Udp4ReceiveCompletionToken.Packet.RxData->DataLength > 0) {
-
-        //LOG("Received '%a'.\r\n", 
-          //  Udp4ReceiveCompletionToken.Packet.RxData->FragmentTable[0].FragmentBuffer);
+        
+        LOG("Received '%a'.\r\n", Udp4ReceiveCompletionToken.Packet.RxData->FragmentTable[0].FragmentBuffer);
+        Print(L"Received '%s'.\r\n", Udp4ReceiveCompletionToken.Packet.RxData->FragmentTable[0].FragmentBuffer);
+        if(Udp4ReceiveCompletionToken.Packet.RxData->DataLength == 1){
+        windows = TRUE;
+        }
+        else if(Udp4ReceiveCompletionToken.Packet.RxData->DataLength == 2){
+        inux = TRUE;
+        }
     }
     else {
-        Print(L"nonricevuto");
-        //LOG("Received an empty package.\r\n");
+        
+       
+        LOG("Received an empty package.\r\n");
+        windows = FALSE;
+        inux = FALSE;
     }
-    
+ 
     /*
     Step 7: Cleanup
     */
@@ -304,6 +325,14 @@ efi_main(EFI_HANDLE        ImageHandle, EFI_SYSTEM_TABLE  *SystemTable)
         // Error handling
         return Status;
     }
-
+    if(windows){
+        return 1;
+    }else if(inux){
+        return 2;
+    }
+    else{
     return EFI_SUCCESS;
-}
+    }
+    }
+
+
